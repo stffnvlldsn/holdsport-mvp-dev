@@ -95,7 +95,8 @@ def fetch_activities():
                 print(f"  ➤ Lokation: {activity.get('place', 'Ukendt')}")
 
                 # Allerede tilmeldt?
-                status = activity.get("status", "").lower()
+                status_raw = activity.get("status", "")
+                status = str(status_raw).lower()
                 if status == "tilmeldt":
                     print("ℹ️ Du er allerede tilmeldt.")
                     return
