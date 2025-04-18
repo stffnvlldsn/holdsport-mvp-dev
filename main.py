@@ -1,8 +1,19 @@
 import os
 import requests
 import time
+import logging
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('holdsport.log')
+    ]
+)
 
 # Load environment variables
 load_dotenv()
@@ -13,6 +24,9 @@ PASSWORD = os.getenv("HOLDSPORT_PASSWORD")
 ACTIVITY_NAME = os.getenv("HOLDSPORT_ACTIVITY_NAME", "Herre 3 træning").strip().lower()
 DAYS_AHEAD = int(os.getenv("DAYS_AHEAD", "7"))
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "180"))
+
+def log_message(message, level=logging.INFO):
+    logging.log(level, message)
 
 session = requests.Session()
 session.auth = (USERNAME, PASSWORD)
@@ -32,7 +46,7 @@ def is_signup_action_safe(activity):
 
 def signup_for_activity(activity):
     if not is_signup_action_safe(activity):
-        print("⛔ Ingen sikker tilmeldingshandling fundet – springer over.")
+        log_message("⛔ Ingen sikker tilmeldingshandling fundet – springer over.")
         return False
 
     action_path = activity["action_path"]
@@ -53,13 +67,13 @@ def signup_for_activity(activity):
             json=data
         )
         if response.status_code in [200, 201]:
-            print("🎉 Succes! Du er nu tilmeldt Herre 3 træning.")
+            log_message("🎉 Succes! Du er nu tilmeldt Herre 3 træning.")
             return True
         else:
-            print(f"❌ Tilmelding fejlede – statuskode {response.status_code}")
+            log_message(f"❌ Tilmelding fejlede – statuskode {response.status_code}", logging.ERROR)
             return False
     except requests.RequestException as e:
-        print(f"[Fejl] Ved tilmelding: {e}")
+        log_message(f"[Fejl] Ved tilmelding: {e}", logging.ERROR)
         return False
 
 def fetch_activities():
@@ -90,29 +104,33 @@ def fetch_activities():
                 if name != ACTIVITY_NAME:
                     continue
 
-                print(f"✅ Fundet aktivitet: {activity['name']} på holdet {team_name}")
-                print(f"  ➤ Starttid: {activity.get('starttime', 'Ukendt')}")
-                print(f"  ➤ Lokation: {activity.get('place', 'Ukendt')}")
+                log_message(f"✅ Fundet aktivitet: {activity['name']} på holdet {team_name}")
+                log_message(f"  ➤ Starttid: {activity.get('starttime', 'Ukendt')}")
+                log_message(f"  ➤ Lokation: {activity.get('place', 'Ukendt')}")
 
                 # Allerede tilmeldt?
                 status_raw = activity.get("status", "")
                 status = str(status_raw).lower()
                 if status == "tilmeldt":
-                    print("ℹ️ Du er allerede tilmeldt.")
+                    log_message("ℹ️ Du er allerede tilmeldt.")
                     return
                 else:
-                    print("🟡 Forsøger at tilmelde dig...")
+                    log_message("🟡 Forsøger at tilmelde dig...")
                     signup_for_activity(activity)
                     return
     except requests.RequestException as e:
-        print(f"[Fejl] API-kald fejlede: {e}")
+        log_message(f"[Fejl] API-kald fejlede: {e}", logging.ERROR)
 
 def main():
-    print("🤖 Starter Holdsport-bot med tilmelding...\n")
+    log_message("🤖 Starter Holdsport-bot med tilmelding...")
     while True:
-        print("🔍 Tjekker Holdsport for aktiviteter...\n")
-        fetch_activities()
-        time.sleep(CHECK_INTERVAL)
+        try:
+            log_message("🔍 Tjekker Holdsport for aktiviteter...")
+            fetch_activities()
+            time.sleep(CHECK_INTERVAL)
+        except Exception as e:
+            log_message(f"Uventet fejl: {e}", logging.ERROR)
+            time.sleep(60)  # Vent 1 minut ved uventede fejl
 
 if __name__ == "__main__":
     main()
