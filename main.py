@@ -4,6 +4,7 @@ import time
 import logging
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+import telegram
 
 # Configure logging
 logging.basicConfig(
@@ -24,6 +25,23 @@ PASSWORD = os.getenv("HOLDSPORT_PASSWORD")
 ACTIVITY_NAME = os.getenv("HOLDSPORT_ACTIVITY_NAME", "Herre 3 træning").strip().lower()
 DAYS_AHEAD = int(os.getenv("DAYS_AHEAD", "7"))
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "180"))
+
+# Telegram settings
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+def send_telegram_notification(message):
+    """Send a notification via Telegram"""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        log_message("⚠️ Telegram credentials not configured", logging.WARNING)
+        return
+    
+    try:
+        bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+        log_message("✅ Telegram notification sent successfully")
+    except Exception as e:
+        log_message(f"❌ Failed to send Telegram notification: {e}", logging.ERROR)
 
 def log_message(message, level=logging.INFO):
     logging.log(level, message)
@@ -67,7 +85,11 @@ def signup_for_activity(activity):
             json=data
         )
         if response.status_code in [200, 201]:
-            log_message("🎉 Succes! Du er nu tilmeldt Herre 3 træning.")
+            success_message = f"🎉 Succes! Du er nu tilmeldt {activity.get('name', 'Herre 3 træning')}.\n" \
+                            f"📅 Dato: {activity.get('starttime', 'Ukendt')}\n" \
+                            f"📍 Lokation: {activity.get('place', 'Ukendt')}"
+            log_message(success_message)
+            send_telegram_notification(success_message)
             return True
         else:
             log_message(f"❌ Tilmelding fejlede – statuskode {response.status_code}", logging.ERROR)
