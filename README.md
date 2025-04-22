@@ -5,7 +5,7 @@ Et simpelt Python-script, der automatisk tilmelder dig aktiviteter på Holdsport
 ## 🔧 Funktioner
 
 - Logger ind via Holdsport API
-- Henter dine hold og deres aktiviteter de næste 8 dage
+- Henter dine hold og deres aktiviteter de næste 7 dage
 - Finder aktiviteter med navnet `Herre 3 træning` (kan tilpasses)
 - Tjekker om du allerede er tilmeldt – ellers tilmelder den dig
 - Sender notifikation via Telegram, når du bliver tilmeldt
