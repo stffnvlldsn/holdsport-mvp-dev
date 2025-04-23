@@ -36,6 +36,9 @@ PING_INTERVAL = int(os.getenv("PING_INTERVAL", "300"))  # 5 minutes in seconds
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
+# Discord settings
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+
 # Global status tracking
 status = {
     "start_time": datetime.now(),
@@ -47,11 +50,9 @@ status = {
 }
 
 async def handle_health_check(request):
-    """Simple health check endpoint"""
     return web.Response(text="Holdsport Bot is running")
 
 async def start_http_server():
-    """Start a minimal HTTP server"""
     app = web.Application()
     app.router.add_get('/health', handle_health_check)
     runner = web.AppRunner(app)
@@ -61,7 +62,6 @@ async def start_http_server():
     log_message("🌐 HTTP server started on port 10000")
 
 async def self_ping():
-    """Keep the service awake by pinging itself"""
     while status["is_running"]:
         try:
             async with aiohttp.ClientSession() as session:
@@ -75,11 +75,9 @@ async def self_ping():
         await asyncio.sleep(PING_INTERVAL)
 
 async def send_telegram_notification(message):
-    """Send a notification via Telegram"""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         log_message("⚠️ Telegram credentials not configured", logging.WARNING)
         return
-    
     try:
         bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
         await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
@@ -87,14 +85,26 @@ async def send_telegram_notification(message):
     except Exception as e:
         log_message(f"❌ Failed to send Telegram notification: {e}", logging.ERROR)
 
+async def send_discord_notification(message):
+    if not DISCORD_WEBHOOK_URL:
+        log_message("⚠️ Discord webhook not configured", logging.WARNING)
+        return
+    try:
+        data = {"content": message, "username": "Holdsport Bot 🎾"}
+        response = requests.post(DISCORD_WEBHOOK_URL, json=data)
+        if response.status_code != 204:
+            log_message(f"⚠️ Discord webhook error: {response.status_code}", logging.WARNING)
+        else:
+            log_message("✅ Discord notification sent successfully")
+    except Exception as e:
+        log_message(f"❌ Failed to send Discord notification: {e}", logging.ERROR)
+
 def log_message(message, level=logging.INFO):
     logging.log(level, message)
 
 def generate_status_report():
-    """Generate a detailed status report"""
     uptime = datetime.now() - status["start_time"]
     hours = uptime.total_seconds() / 3600
-    
     report = f"""
 📊 Holdsport Bot Status Report
 ⏱️ Uptime: {hours:.1f} hours
@@ -102,18 +112,16 @@ def generate_status_report():
 ✅ Successful signups: {status["successful_signups"]}
 ⏰ Last check: {status["last_check"].strftime('%Y-%m-%d %H:%M:%S') if status["last_check"] else "Never"}
 """
-    
     if status["last_error"]:
         report += f"❌ Last error: {status['last_error']}\n"
-    
     return report
 
 async def send_status_update():
-    """Send periodic status updates"""
     while status["is_running"]:
         try:
             report = generate_status_report()
             await send_telegram_notification(report)
+            await send_discord_notification(report)
         except Exception as e:
             log_message(f"Error sending status update: {e}", logging.ERROR)
         await asyncio.sleep(STATUS_INTERVAL)
@@ -127,7 +135,6 @@ session.headers.update({
 })
 
 def is_signup_action_safe(activity):
-    """Sikrer at vi *kun* tilmelder os aktiviteter – aldrig afmelder eller ændrer"""
     for action in activity.get("actions", []):
         user_action = action.get("activities_user", {})
         if user_action.get("name", "").lower() == "tilmeld":
@@ -138,18 +145,10 @@ async def signup_for_activity(activity):
     if not is_signup_action_safe(activity):
         log_message("⛔ Ingen sikker tilmeldingshandling fundet – springer over.")
         return False
-
     action_path = activity["action_path"]
     if action_path.startswith("/v1"):
         action_path = action_path[3:]
-
-    data = {
-        "activities_user": {
-            "joined_status": 1,
-            "picked": 1
-        }
-    }
-
+    data = {"activities_user": {"joined_status": 1, "picked": 1}}
     try:
         response = session.request(
             method=activity["action_method"],
@@ -157,11 +156,10 @@ async def signup_for_activity(activity):
             json=data
         )
         if response.status_code in [200, 201]:
-            success_message = f"🎉 Succes! Du er nu tilmeldt {activity.get('name', 'Herre 3 træning')}.\n" \
-                            f"📅 Dato: {activity.get('starttime', 'Ukendt')}\n" \
-                            f"📍 Lokation: {activity.get('place', 'Ukendt')}"
+            success_message = f"🎉 Succes! Du er nu tilmeldt {activity.get('name', 'Herre 3 træning')}\n📅 Dato: {activity.get('starttime', 'Ukendt')}\n📍 Lokation: {activity.get('place', 'Ukendt')}"
             log_message(success_message)
             await send_telegram_notification(success_message)
+            await send_discord_notification(success_message)
             status["successful_signups"] += 1
             return True
         else:
@@ -180,35 +178,27 @@ async def fetch_activities():
         teams_res = session.get(f"{API_BASE}/teams")
         teams_res.raise_for_status()
         teams = teams_res.json()
-
         for team in teams:
             team_id = team["id"]
             team_name = team["name"]
-
             today = datetime.now()
             end_date = today + timedelta(days=DAYS_AHEAD)
             params = {
                 "date": today.strftime("%Y-%m-%d"),
                 "end_date": end_date.strftime("%Y-%m-%d")
             }
-
             act_res = session.get(f"{API_BASE}/teams/{team_id}/activities", params=params)
             act_res.raise_for_status()
             activities = act_res.json()
-
             for activity in activities:
                 name = activity.get("name", "").strip().lower()
-
                 if name != ACTIVITY_NAME:
                     continue
-
                 log_message(f"✅ Fundet aktivitet: {activity['name']} på holdet {team_name}")
                 log_message(f"  ➤ Starttid: {activity.get('starttime', 'Ukendt')}")
                 log_message(f"  ➤ Lokation: {activity.get('place', 'Ukendt')}")
-
                 status["last_check"] = datetime.now()
                 status["total_checks"] += 1
-
                 activity_status = str(activity.get("status", "")).lower()
                 if activity_status == "tilmeldt":
                     log_message("ℹ️ Du er allerede tilmeldt.")
@@ -225,16 +215,10 @@ async def fetch_activities():
 async def main():
     log_message("🤖 Starter Holdsport-bot med tilmelding...")
     await send_telegram_notification("🚀 Holdsport Bot started!")
-    
-    # Start HTTP server
+    await send_discord_notification("🚀 Holdsport Bot started!")
     await start_http_server()
-    
-    # Start status update task
     status_task = asyncio.create_task(send_status_update())
-    
-    # Start self-ping task
     ping_task = asyncio.create_task(self_ping())
-    
     try:
         while status["is_running"]:
             try:
@@ -245,10 +229,11 @@ async def main():
                 error_msg = f"Uventet fejl: {e}"
                 log_message(error_msg, logging.ERROR)
                 status["last_error"] = error_msg
-                await asyncio.sleep(60)  # Vent 1 minut ved uventede fejl
+                await asyncio.sleep(60)
     except KeyboardInterrupt:
         status["is_running"] = False
         await send_telegram_notification("🛑 Holdsport Bot stopped!")
+        await send_discord_notification("🛑 Holdsport Bot stopped!")
         log_message("Bot stopped by user")
     finally:
         status_task.cancel()
