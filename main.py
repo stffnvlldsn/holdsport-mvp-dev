@@ -8,6 +8,7 @@ import telegram
 import threading
 import asyncio
 from aiohttp import web
+import aiohttp
 
 # Configure logging
 logging.basicConfig(
@@ -29,6 +30,7 @@ ACTIVITY_NAME = os.getenv("HOLDSPORT_ACTIVITY_NAME", "Herre 3 træning").strip()
 DAYS_AHEAD = int(os.getenv("DAYS_AHEAD", "7"))
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "180"))
 STATUS_INTERVAL = int(os.getenv("STATUS_INTERVAL", "43200"))  # 12 hours in seconds
+PING_INTERVAL = int(os.getenv("PING_INTERVAL", "300"))  # 5 minutes in seconds
 
 # Telegram settings
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -57,6 +59,20 @@ async def start_http_server():
     site = web.TCPSite(runner, '0.0.0.0', int(os.getenv('PORT', '10000')))
     await site.start()
     log_message("🌐 HTTP server started on port 10000")
+
+async def self_ping():
+    """Keep the service awake by pinging itself"""
+    while status["is_running"]:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"http://localhost:{os.getenv('PORT', '10000')}/health") as response:
+                    if response.status == 200:
+                        log_message("✅ Self-ping successful")
+                    else:
+                        log_message(f"⚠️ Self-ping failed with status {response.status}")
+        except Exception as e:
+            log_message(f"⚠️ Self-ping error: {e}")
+        await asyncio.sleep(PING_INTERVAL)
 
 async def send_telegram_notification(message):
     """Send a notification via Telegram"""
@@ -216,6 +232,9 @@ async def main():
     # Start status update task
     status_task = asyncio.create_task(send_status_update())
     
+    # Start self-ping task
+    ping_task = asyncio.create_task(self_ping())
+    
     try:
         while status["is_running"]:
             try:
@@ -233,8 +252,10 @@ async def main():
         log_message("Bot stopped by user")
     finally:
         status_task.cancel()
+        ping_task.cancel()
         try:
             await status_task
+            await ping_task
         except asyncio.CancelledError:
             pass
 
