@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import telegram
 import threading
 import asyncio
+from aiohttp import web
 
 # Configure logging
 logging.basicConfig(
@@ -42,6 +43,20 @@ status = {
     "last_error": None,
     "is_running": True
 }
+
+async def handle_health_check(request):
+    """Simple health check endpoint"""
+    return web.Response(text="Holdsport Bot is running")
+
+async def start_http_server():
+    """Start a minimal HTTP server"""
+    app = web.Application()
+    app.router.add_get('/health', handle_health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', int(os.getenv('PORT', '10000')))
+    await site.start()
+    log_message("🌐 HTTP server started on port 10000")
 
 async def send_telegram_notification(message):
     """Send a notification via Telegram"""
@@ -194,6 +209,9 @@ async def fetch_activities():
 async def main():
     log_message("🤖 Starter Holdsport-bot med tilmelding...")
     await send_telegram_notification("🚀 Holdsport Bot started!")
+    
+    # Start HTTP server
+    await start_http_server()
     
     # Start status update task
     status_task = asyncio.create_task(send_status_update())
