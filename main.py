@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import telegram
 import threading
+import asyncio
 
 # Configure logging
 logging.basicConfig(
@@ -42,7 +43,7 @@ status = {
     "is_running": True
 }
 
-def send_telegram_notification(message):
+async def send_telegram_notification(message):
     """Send a notification via Telegram"""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         log_message("⚠️ Telegram credentials not configured", logging.WARNING)
@@ -50,7 +51,7 @@ def send_telegram_notification(message):
     
     try:
         bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
-        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
         log_message("✅ Telegram notification sent successfully")
     except Exception as e:
         log_message(f"❌ Failed to send Telegram notification: {e}", logging.ERROR)
@@ -76,15 +77,15 @@ def generate_status_report():
     
     return report
 
-def send_status_update():
+async def send_status_update():
     """Send periodic status updates"""
     while status["is_running"]:
         try:
             report = generate_status_report()
-            send_telegram_notification(report)
+            await send_telegram_notification(report)
         except Exception as e:
             log_message(f"Error sending status update: {e}", logging.ERROR)
-        time.sleep(STATUS_INTERVAL)
+        await asyncio.sleep(STATUS_INTERVAL)
 
 session = requests.Session()
 session.auth = (USERNAME, PASSWORD)
@@ -102,7 +103,7 @@ def is_signup_action_safe(activity):
             return True
     return False
 
-def signup_for_activity(activity):
+async def signup_for_activity(activity):
     if not is_signup_action_safe(activity):
         log_message("⛔ Ingen sikker tilmeldingshandling fundet – springer over.")
         return False
@@ -129,7 +130,7 @@ def signup_for_activity(activity):
                             f"📅 Dato: {activity.get('starttime', 'Ukendt')}\n" \
                             f"📍 Lokation: {activity.get('place', 'Ukendt')}"
             log_message(success_message)
-            send_telegram_notification(success_message)
+            await send_telegram_notification(success_message)
             status["successful_signups"] += 1
             return True
         else:
@@ -143,7 +144,7 @@ def signup_for_activity(activity):
         status["last_error"] = error_msg
         return False
 
-def fetch_activities():
+async def fetch_activities():
     try:
         teams_res = session.get(f"{API_BASE}/teams")
         teams_res.raise_for_status()
@@ -183,37 +184,41 @@ def fetch_activities():
                     return
                 else:
                     log_message("🟡 Forsøger at tilmelde dig...")
-                    signup_for_activity(activity)
+                    await signup_for_activity(activity)
                     return
     except requests.RequestException as e:
         error_msg = f"[Fejl] API-kald fejlede: {e}"
         log_message(error_msg, logging.ERROR)
         status["last_error"] = error_msg
 
-def main():
+async def main():
     log_message("🤖 Starter Holdsport-bot med tilmelding...")
-    send_telegram_notification("🚀 Holdsport Bot started!")
+    await send_telegram_notification("🚀 Holdsport Bot started!")
     
-    # Start status update thread
-    status_thread = threading.Thread(target=send_status_update)
-    status_thread.daemon = True
-    status_thread.start()
+    # Start status update task
+    status_task = asyncio.create_task(send_status_update())
     
     try:
-        while True:
+        while status["is_running"]:
             try:
                 log_message("🔍 Tjekker Holdsport for aktiviteter...")
-                fetch_activities()
-                time.sleep(CHECK_INTERVAL)
+                await fetch_activities()
+                await asyncio.sleep(CHECK_INTERVAL)
             except Exception as e:
                 error_msg = f"Uventet fejl: {e}"
                 log_message(error_msg, logging.ERROR)
                 status["last_error"] = error_msg
-                time.sleep(60)  # Vent 1 minut ved uventede fejl
+                await asyncio.sleep(60)  # Vent 1 minut ved uventede fejl
     except KeyboardInterrupt:
         status["is_running"] = False
-        send_telegram_notification("🛑 Holdsport Bot stopped!")
+        await send_telegram_notification("🛑 Holdsport Bot stopped!")
         log_message("Bot stopped by user")
+    finally:
+        status_task.cancel()
+        try:
+            await status_task
+        except asyncio.CancelledError:
+            pass
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
