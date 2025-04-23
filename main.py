@@ -177,7 +177,7 @@ def fetch_activities():
                 status["last_check"] = datetime.now()
                 status["total_checks"] += 1
 
-                activity_status = activity.get("status", "").lower()
+                activity_status = str(activity.get("status", "")).lower()
                 if activity_status == "tilmeldt":
                     log_message("ℹ️ Du er allerede tilmeldt.")
                     return
