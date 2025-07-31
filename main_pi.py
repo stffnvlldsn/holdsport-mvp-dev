@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import telegram
 import asyncio
+from telegram.ext import Application, CommandHandler, ContextTypes
+import sys
 
 # Configure logging
 logging.basicConfig(
@@ -31,6 +33,7 @@ STATUS_INTERVAL = int(os.getenv("STATUS_INTERVAL", "43200"))  # 12 hours in seco
 # Telegram settings
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_ADMIN_ID = int(os.getenv("TELEGRAM_ADMIN_ID", "6052252183"))
 
 # Global status tracking
 status = {
@@ -39,7 +42,8 @@ status = {
     "total_checks": 0,
     "successful_signups": 0,
     "last_error": None,
-    "is_running": True
+    "is_running": True,
+    "restart": False
 }
 
 async def send_telegram_notification(message):
@@ -190,12 +194,54 @@ async def fetch_activities():
         log_message(error_msg, logging.ERROR)
         status["last_error"] = error_msg
 
+# --- Telegram Command Handlers ---
+async def status_command(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != TELEGRAM_ADMIN_ID:
+        await update.message.reply_text("⛔️ You are not authorized to use this command.")
+        return
+    await update.message.reply_text(generate_status_report())
+
+async def stop_command(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != TELEGRAM_ADMIN_ID:
+        await update.message.reply_text("⛔️ You are not authorized to use this command.")
+        return
+    await update.message.reply_text("🛑 Stopping Holdsport Bot...")
+    status["is_running"] = False
+
+async def start_command(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != TELEGRAM_ADMIN_ID:
+        await update.message.reply_text("⛔️ You are not authorized to use this command.")
+        return
+    await update.message.reply_text("🤖 Holdsport Bot is already running!")
+
+async def restart_command(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != TELEGRAM_ADMIN_ID:
+        await update.message.reply_text("⛔️ You are not authorized to use this command.")
+        return
+    await update.message.reply_text("🔄 Restarting Holdsport Bot...")
+    status["restart"] = True
+    status["is_running"] = False
+
+async def telegram_command_listener():
+    if not TELEGRAM_BOT_TOKEN:
+        log_message("Telegram bot token not set, command listener not started.", logging.WARNING)
+        return
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    application.add_handler(CommandHandler("status", status_command))
+    application.add_handler(CommandHandler("stop", stop_command))
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("restart", restart_command))
+    await application.start()
+    await application.updater.start_polling()
+    await application.updater.idle()
+
 async def main():
     log_message("🤖 Starter Holdsport-bot med tilmelding...")
     await send_telegram_notification("🚀 Holdsport Bot started on Raspberry Pi!")
     
     # Start status update task
     status_task = asyncio.create_task(send_status_update())
+    telegram_task = asyncio.create_task(telegram_command_listener())
     
     try:
         while status["is_running"]:
@@ -214,10 +260,18 @@ async def main():
         log_message("Bot stopped by user")
     finally:
         status_task.cancel()
+        telegram_task.cancel()
         try:
             await status_task
+            await telegram_task
         except asyncio.CancelledError:
             pass
+    # Handle restart
+    if status.get("restart"):
+        log_message("Restarting Holdsport Bot...")
+        await send_telegram_notification("♻️ Holdsport Bot restarting now!")
+        python = sys.executable
+        os.execv(python, [python] + sys.argv)
 
 if __name__ == "__main__":
     asyncio.run(main()) 
