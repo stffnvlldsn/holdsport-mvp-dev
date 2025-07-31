@@ -231,9 +231,8 @@ async def telegram_command_listener():
     application.add_handler(CommandHandler("stop", stop_command))
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("restart", restart_command))
-    await application.start()
-    await application.updater.start_polling()
-    await application.updater.idle()
+    log_message("🎧 Starter Telegram command listener")
+    await application.run_polling()
 
 async def main():
     log_message("🤖 Starter Holdsport-bot med tilmelding...")
