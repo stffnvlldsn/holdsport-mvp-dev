@@ -3,4 +3,4 @@
 # Start Holdsport Bot
 cd ~/holdsport-bot
 source venv/bin/activate
-python main.py 
+python main_pi.py 
