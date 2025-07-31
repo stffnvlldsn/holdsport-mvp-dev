@@ -1,5 +1,7 @@
 import os
 from telegram.ext import Application, CommandHandler, ContextTypes
+from dotenv import load_dotenv
+load_dotenv()
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_ID = int(os.getenv("TELEGRAM_ADMIN_ID", "0"))
