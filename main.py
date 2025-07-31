@@ -26,7 +26,7 @@ load_dotenv()
 API_BASE = "https://api.holdsport.dk/v1"
 USERNAME = os.getenv("HOLDSPORT_USERNAME")
 PASSWORD = os.getenv("HOLDSPORT_PASSWORD")
-ACTIVITY_NAME = os.getenv("HOLDSPORT_ACTIVITY_NAME", "Herre 3 træning").strip().lower()
+ACTIVITY_NAME = os.getenv("HOLDSPORT_ACTIVITY_NAME", "Herre 4 træning").strip().lower()
 DAYS_AHEAD = int(os.getenv("DAYS_AHEAD", "7"))
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "180"))
 STATUS_INTERVAL = int(os.getenv("STATUS_INTERVAL", "43200"))  # 12 hours in seconds
